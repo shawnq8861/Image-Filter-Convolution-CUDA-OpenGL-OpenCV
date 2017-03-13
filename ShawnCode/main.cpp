@@ -2,6 +2,7 @@
 	 nvcc readWriteJPGFile.cu -Wno-deprecated-gpu-targets -lopencv_core -lopencv_highgui -o readWriteJPGFile
 */
 
+#include "kernel.h"
 #include <iostream>
 #include <string.h>
 #include <vector>
@@ -9,54 +10,16 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <cuda_runtime.h>
 
-//
-// number of threads used to set block dimensions
-//
-#define NUM_THRDS 32
-
 using namespace std;
 using namespace cv;
-
-//
-// set a square area inside image to a constant value
-//
-__global__ void modifyImageK(uchar *imageMatrix, int rows, 
-							int cols, int radius, uchar value)
-{
-    // calculate the row and column that the thread works on
-    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-	// column major indexing
-	int col = index/rows;
-	int row = index - (rows * col);
-	// define constraints on square region
-    int rowCtr = rows/2 - 1;
-	int colCtr = cols/2 - 1;
-	int leftCol = colCtr - radius;
-	int rightCol = colCtr + radius;
-	int topRow = rowCtr - radius;
-	int botRow = rowCtr + radius;
-
-	if ( (row >= topRow)  
-			&&
-		 ( row <= botRow)
-			&&
-		 (col >= leftCol)
-			&&
-		 (col <= rightCol) ) {
-
-		imageMatrix[index] = 0;
-
-	}
-	else {
-		return;
-	}
-}
 
 int main(void)
 {
     cout << "Hello CSS535 Final Project!" << endl;
 
     uchar *imageMatrix = NULL;
+	uchar *rawImage = NULL;
+	uchar *filteredImage = NULL;
 
     const string imageRoot =
     "/home/ubuntu/Documents/CSS535Projects/FinalProject";
@@ -66,6 +29,8 @@ int main(void)
     const string imagePath = imageRoot + imageName;
 
     Mat inImgMat = imread(imagePath, IMREAD_GRAYSCALE);
+	// make a copy for later...
+	Mat filterImgMat(inImgMat);
     if (inImgMat.empty()) {
         cout << "error:  input image cannot be read..." << endl;
     }
@@ -101,11 +66,14 @@ int main(void)
 	int hrzCtr = cols/2;
 	int vrtCtr = rows/2;
 
-	// transfer Mat data to CPU image buffer
+	// transfer Mat data to CPU image buffers
 	imageMatrix = new uchar[size];
+	rawImage = new uchar[size];
+	filteredImage = new uchar[size];
 	for (int col = 0; col < rows; ++col) {
 		for (int row = 0; row < cols; ++row) {
 			imageMatrix[cols * col + row] = inImgMat.at<uchar>(col, row);
+			rawImage[cols * col + row] = inImgMat.at<uchar>(col, row);
 		}
 	}
 
@@ -149,33 +117,11 @@ int main(void)
     	return 1;
     }
 
-	// transfer CPU buffer to GPU memory and modify
-	uchar *d_imageMatrix;
-	cudaError_t err1 = cudaMalloc((void **)&d_imageMatrix, size);
-	if (err1 != cudaSuccess) {
-        cout << "the error is " << cudaGetErrorString(err1) << endl;
-    }
-	cudaMemcpy(d_imageMatrix, imageMatrix, size, cudaMemcpyHostToDevice);
-
-	// kernel call...
-
-    // 1D specification
-    dim3 blockSize(NUM_THRDS);
-
-    // calculate the number of blocks per each grid side
-    // 1D specification
-    int bksX = size/NUM_THRDS + 1;
-
-    // specify the grid dimensions
-    dim3 gridSize(bksX);
-
+	//
 	// launch the modifyImageK() kernel function on the device (GPU)
+	//
 	uchar value = (uchar)0;
-    modifyImageK<<<gridSize, blockSize>>>(d_imageMatrix, cols, rows, 
-											radius, value);
-
-	// transfer GPU memory to CPU buffer
-	cudaMemcpy(imageMatrix, d_imageMatrix, size, cudaMemcpyDeviceToHost);
+    modifyImage(imageMatrix, cols, rows, radius, value);
 
 	// transfer CPU image buffer to Mat data
 	for (int col = 0; col < rows; ++col) {
@@ -200,11 +146,47 @@ int main(void)
 			 << ex.what() << endl;
     	return 1;
     }
+
+	//
+	// launch the filterImageK() kernel function on the device (GPU)
+	//
+	int filterKernelSize = 7;
+	radius = (filterKernelSize -1)/2; 
+    filterImage(rawImage, filteredImage, cols, rows, radius);
+	
+	// transfer CPU image buffer to Mat data
+	for (int col = 0; col < rows; ++col) {
+		for (int row = 0; row < cols; ++row) {
+			filterImgMat.at<uchar>(col, row) = 
+			filteredImage[cols * col + row];
+		}
+	}
+
+	cout << "pixel value @ (vrtCtr, hrzCtr) = " << 
+			(ushort)filterImgMat.at<uchar>(vrtCtr, hrzCtr) << endl;
+
+	namedWindow("Kernel Filtered Image", WINDOW_AUTOSIZE);
+    imshow("Kernel Filtered Image", inImgMat);
+
+	// save kernel modified image to jpg file
+	const string kFilterImgPath = imageRoot + "/kernelFilteredImage.jpg";
+    try {
+    	imwrite(kFilterImgPath, filterImgMat, compression_params);
+    }
+	catch (Exception& ex) {
+    	cout << "exception converting image to JPG format: " 
+			 << ex.what() << endl;
+    	return 1;
+    }
 	
 	delete[] imageMatrix;
-	cudaFree(d_imageMatrix);
+	delete[] rawImage;
+	delete[] filteredImage;
 
     waitKey();
+
+	// close and destroy the open named windows
+	destroyAllWindows();
 
     return 0;
 }
