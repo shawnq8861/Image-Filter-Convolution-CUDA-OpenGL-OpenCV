@@ -150,8 +150,8 @@ int main(void)
 	//
 	// launch the filterImageK() kernel function on the device (GPU)
 	//
-	int filterKernelSize = 3;
-    filterImage(rawImage, filteredImage, cols, rows, filterKernelSize);
+	int filterKernelSize = 5;
+    boxFilter(rawImage, filteredImage, cols, rows, filterKernelSize);
 	
 	// transfer CPU image buffer to Mat data
 	for (int col = 0; col < rows; ++col) {

@@ -196,8 +196,49 @@ void modifyImage(unsigned char *imageMatrix, int rows,
 	cudaFree(d_imageMatrix);	
 }
 
-void filterImage(unsigned char *imageInMat, unsigned char *imageOutMat, 
+void boxFilter(unsigned char *imageInMat, unsigned char *imageOutMat, 
 				 int rows, int cols, int kSize)
+{
+	// transfer CPU buffer to GPU memory and modify
+	int size = rows * cols;
+	unsigned char *d_imageInMat;
+	cudaError_t err1 = cudaMalloc((void **)&d_imageInMat, size);
+	if (err1 != cudaSuccess) {
+        cout << "the error is " << cudaGetErrorString(err1) << endl;
+    }
+	unsigned char *d_imageOutMat;
+	cudaError_t err2 = cudaMalloc((void **)&d_imageOutMat, size);
+	if (err2 != cudaSuccess) {
+        cout << "the error is " << cudaGetErrorString(err2) << endl;
+    }
+	cudaMemcpy(d_imageInMat, imageInMat, size, cudaMemcpyHostToDevice);
+
+	// kernel call...
+
+	// specify the 2D block dimensions in threads per block
+    dim3 blockSize(NUM_THRDS, NUM_THRDS);
+
+    // calculate the number of blocks per each grid side
+    int bksX = (cols + blockSize.x - 1)/blockSize.x;
+    int bksY = (rows + blockSize.y - 1)/blockSize.y;
+
+    // specify the grid dimensions
+    dim3 gridSize(bksX, bksY);
+
+	// launch the modifyImageK() kernel function on the device (GPU)
+    boxFilterK<<<gridSize, blockSize>>>(d_imageInMat, d_imageOutMat, 
+										rows, cols, kSize);
+
+	// transfer GPU memory to CPU buffer
+	cudaMemcpy(imageOutMat, d_imageOutMat, size, cudaMemcpyDeviceToHost);
+
+	// free up the allocated memory
+	cudaFree(d_imageInMat);
+	cudaFree(d_imageOutMat);		
+}
+
+void medianFilter(unsigned char *imageInMat, unsigned char *imageOutMat, 
+					int rows, int cols, int kSize)
 {
 	// transfer CPU buffer to GPU memory and modify
 	int size = rows * cols;
