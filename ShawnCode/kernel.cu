@@ -6,37 +6,113 @@
 //
 #define NUM_THRDS 32
 
+#define MAX_K_SIZE 9
+
 using namespace std;
 
 //
-// apply the following filter to the image:
-//		    1 1 1
-//	(1/9) *	1 1 1
-//		    1 1 1
+// define a square submatrix of size kSize
+// using the thread index as the center value
+// if the border values are outside the image matrix bounds,
+// do not use those values in the calculation
+// 	- sort the submatrix
+//	- determine the median value of the sorted submatrix
+//	- replace the original pixel value at index with the median value
+//	
+__global__ 
+void medianFilterK(unsigned char *imageInMat, unsigned char *imageOutMat, 
+				int rows, int cols, int kSize)
+{
+	unsigned char sortMatrix[MAX_K_SIZE * MAX_K_SIZE];
+    // calculate the row and column that the thread works on
+	int col = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int row = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	// use column major indexing to match OpenCV Mat class
+	// the 1D thread index is the center pixel value of the kernel
+	int pixel = col * rows + row;
+
+	int radius = (kSize - 1)/2;
+
+	// iterate around the submatrix and copy the values to be sorted	
+	// to the sort matrix.  Do not copy values outside the image boundaries
+	int count = 0;
+	for (int c = col - radius; c < col + radius; ++c) {
+		for (int r = row - radius; r < row + radius; ++r) {
+			if (   (c < 0) 
+				|| (r < 0)
+				|| (c >= cols) 
+				|| (r >= rows) ) {
+				count += 0;
+			}
+			else {
+				sortMatrix[count] = imageInMat[c * rows + r];
+				count += 1;
+			}
+		} 
+	}
+
+	// run bubble sort only on the elements values added
+	//
+    // Conventional bubble sort
+    //  1. loop through the array a number of times equal to the size of the 
+	//	    array
+    //  2. each iteration in each loop will compare two consecutive array 
+	//	   elements
+    //  3. if the first is greater than the second, swap the elements 
+	//	   (sort ascending)
+    //  4. alternatively, if the first is less than the second, swap the 
+	//	   elements (sort descending)
+    //
+
+    // loop over the array...
+    for (int i = 0; i < count; ++i) {
+        // each iteration, ...
+        for (int j = 0; j < count - 1; ++j) {
+            // compare and swap...
+            if (sortMatrix[j] > sortMatrix[j+1]) {
+                int temp = sortMatrix[j];
+                sortMatrix[j] = sortMatrix[j+1];
+                sortMatrix[j+1] = temp;
+            }
+        }
+    }
+	int medIdx = (count / 2) + (count % 2);
+	imageOutMat[pixel] = sortMatrix[medIdx];
+}
+
 //
-// in this case of 3 X 3 filter kernel:
-//			radius = 1
+// sum the elements defined by a square submatrix of size kSize
+// using the thread index as the center value
+// if the border values are outside the image matrix bounds,
+// do not use those values in the calculation
 //	
 __global__ 
 void boxFilterK(unsigned char *imageInMat, unsigned char *imageOutMat, 
-				int rows, int cols, int radius)
+				int rows, int cols, int kSize)
 {
     // calculate the row and column that the thread works on
 	int col = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int row = (blockIdx.y * blockDim.y) + threadIdx.y;
 
 	// use column major indexing to match OpenCV Mat class
-	// the index is the center anchor for the kernel
+	// the 1D thread index is the center pixel value of the kernel
 	int pixel = col * rows + row;
 
-	// using the index value as the center anchor for the kernel,
-	// sum the products of the kernel elements and the input
-	// image elements and divde the result by 1/9
+	int radius = (kSize - 1)/2;
+
+	// using the pixel value as the center anchor for the submatrix,
+	// sum the kernel elements and divde the result by the number
+	// of elements summed.  Do not include elements outside of the
+	// image matrix.
 	int sum = 0;
 	int div = 0;
 	for (int c = col - radius; c < col + radius; ++c) {
 		for (int r = row - radius; r < row + radius; ++r) {
-			if ((c < 0) || (r < 0)) {
+			if (   (c < 0) 
+				|| (r < 0)
+				|| (c >= cols) 
+				|| (r >= rows) ) {
 				sum += 0;
 			}
 			else {
@@ -121,7 +197,7 @@ void modifyImage(unsigned char *imageMatrix, int rows,
 }
 
 void filterImage(unsigned char *imageInMat, unsigned char *imageOutMat, 
-				 int rows, int cols, int radius)
+				 int rows, int cols, int kSize)
 {
 	// transfer CPU buffer to GPU memory and modify
 	int size = rows * cols;
@@ -150,8 +226,8 @@ void filterImage(unsigned char *imageInMat, unsigned char *imageOutMat,
     dim3 gridSize(bksX, bksY);
 
 	// launch the modifyImageK() kernel function on the device (GPU)
-    boxFilterK<<<gridSize, blockSize>>>(d_imageInMat, d_imageOutMat, 
-										rows, cols, radius);
+    medianFilterK<<<gridSize, blockSize>>>(d_imageInMat, d_imageOutMat, 
+										rows, cols, kSize);
 
 	// transfer GPU memory to CPU buffer
 	cudaMemcpy(imageOutMat, d_imageOutMat, size, cudaMemcpyDeviceToHost);

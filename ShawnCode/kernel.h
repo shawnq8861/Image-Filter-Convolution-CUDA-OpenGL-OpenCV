@@ -3,7 +3,7 @@
 
 void modifyImage(unsigned char *imageMatrix, int rows, int cols, int radius, unsigned char value);
 
-void filterImage(unsigned char *imageInMat, unsigned char *imageOutMat, int rows, int cols, int radius);
+void filterImage(unsigned char *imageInMat, unsigned char *imageOutMat, int rows, int cols, int kSize);
 
 #endif
 
