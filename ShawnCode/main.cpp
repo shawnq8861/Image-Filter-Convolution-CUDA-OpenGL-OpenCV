@@ -148,7 +148,7 @@ int main(void)
     }
 
 	//
-	// launch the filterImageK() kernel function on the device (GPU)
+	// launch the filter kernel function on the device (GPU)
 	//
 	int filterKernelSize = 5;
     boxFilter(rawImage, filteredImage, cols, rows, filterKernelSize);

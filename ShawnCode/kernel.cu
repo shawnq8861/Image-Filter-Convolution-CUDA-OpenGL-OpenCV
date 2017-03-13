@@ -2,15 +2,6 @@
 #include <iostream>
 
 //
-// number of threads used to set block dimensions
-//
-#define NUM_THRDS 32
-
-#define MAX_K_SIZE 9
-
-using namespace std;
-
-//
 // define a square submatrix of size kSize
 // using the thread index as the center value
 // if the border values are outside the image matrix bounds,
