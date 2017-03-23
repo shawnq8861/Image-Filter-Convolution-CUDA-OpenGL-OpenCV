@@ -1,9 +1,30 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
-struct uchar4;
-struct int2;
+//
+// number of threads used to set block dimensions
+//
+#define NUM_THRDS 32
 
-void kernelLauncher(uchar4 *d_out, int w, int h, int2 pos);
+//
+// maxim height and width of filter kernels
+//
+#define MAX_K_SIZE 9
 
-#endif#pragma once
+using namespace std;
+
+//
+// kernel launching function wrappers
+//
+void modifyImage(unsigned char *imageMatrix, int rows, int cols, int radius, 
+					unsigned char value);
+
+void medianFilter(unsigned char *imageInMat, unsigned char *imageOutMat, 
+					int rows, int cols, int kSize);
+
+void boxFilter(unsigned char *imageInMat, unsigned char *imageOutMat, 
+					int rows, int cols, int kSize);
+
+
+#endif
+
